@@ -1,0 +1,83 @@
+====================================================================
+GUIA DE INSTALACION BASE DE ARCH LINUX (UEFI + VMWARE)
+====================================================================
+
+1. COMPROBAR CONEXION A INTERNET
+--------------------------------------------------------------------
+ping -c 3 archlinux.org
+
+
+2. PARTICIONADO DEL DISCO (/dev/sda - GPT)
+--------------------------------------------------------------------
+cfdisk /dev/sda
+
+- Selecciona: gpt
+- Partición 1 (EFI):   Tamaño: 1G  -> Type: EFI System
+- Partición 2 (Swap):  Tamaño: 4G  -> Type: Linux swap
+- Partición 3 (Raiz):  Tamaño: Resto del disco -> Type: Linux filesystem
+- Selecciona [Write], escribe "yes" y sal con [Quit].
+
+
+3. FORMATEO Y MONTAJE
+--------------------------------------------------------------------
+mkfs.fat -F32 /dev/sda1
+mkswap /dev/sda2
+swapon /dev/sda2
+mkfs.ext4 /dev/sda3
+
+mount /dev/sda3 /mnt
+mount --mkdir /dev/sda1 /mnt/boot
+
+
+4. INSTALACION DEL SISTEMA BASE Y PAQUETES ESENCIALES
+--------------------------------------------------------------------
+pacstrap -K /mnt base base-devel linux linux-firmware nano sudo networkmanager
+
+
+5. GENERAR FSTAB Y ENTRAR AL ENTORNO (CHROOT)
+--------------------------------------------------------------------
+genfstab -U /mnt >> /mnt/etc/fstab
+arch-chroot /mnt
+
+
+6. CONFIGURACION INTERNA DEL SISTEMA
+--------------------------------------------------------------------
+# Zona horaria e idioma
+ln -sf /usr/share/zoneinfo/America/Mexico_City /etc/localtime
+hwclock --systohc
+sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen
+echo "LANG=en_US.UTF-8" > /etc/locale.conf
+
+# Nombre de host y habilitar red
+echo "archlinux" > /etc/hostname
+systemctl enable NetworkManager
+
+# Contraseña de root
+passwd
+
+# Crear usuario 'irti' con permisos sudo
+useradd -m -G wheel -s /bin/bash irti
+passwd irti
+
+# Habilitar grupo wheel en visudo
+EDITOR=nano visudo
+(Descomenta la linea: "%wheel ALL=(ALL:ALL) ALL" y guarda con Ctrl+O)
+
+
+7. INSTALACION DEL GESTOR DE ARRANQUE (GRUB UEFI)
+--------------------------------------------------------------------
+pacman -S --needed grub efibootmgr
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+grub-mkconfig -o /boot/grub/grub.cfg
+
+
+8. REINICIAR LA MAQUINA VIRTUAL
+--------------------------------------------------------------------
+exit
+umount -R /mnt
+swapoff -a
+reboot
+
+(Nota: Retira la ISO de Arch Linux en los ajustes de VMware al reiniciar).
+====================================================================
