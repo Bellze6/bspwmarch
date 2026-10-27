@@ -1,30 +1,38 @@
 #!/usr/bin/env bash
 
 # ====================================================================
-# SCRIPT DE DESPLIEGUE: BSPWM, SXHKD Y POLYBAR (TOKYO NIGHT)
+# INSTALADOR MAESTRO: BSPWM, SXHKD, POLYBAR, KITTY Y POWERLEVEL10K
 # ====================================================================
 
 set -e
 
-echo "[*] Instalando paquetes graficos y dependencias..."
+echo "[*] 1. Instalando paquetes base, servidor grafico y utilidades..."
 sudo pacman -Syu --needed --noconfirm \
     xorg-server xorg-xinit xorg-xrandr \
     bspwm sxhkd picom kitty zsh \
     polybar rofi ttf-jetbrains-mono-nerd \
     open-vm-tools xf86-input-vmmouse \
-    xclip alsa-utils wget curl git
+    xclip alsa-utils wget curl git fzf
 
-echo "[*] Habilitando servicio vmtoolsd..."
+echo "[*] 2. Habilitando servicio de VMware..."
 sudo systemctl enable --now vmtoolsd.service
 
-echo "[*] Generando directorios de configuracion..."
+echo "[*] 3. Detectando interfaz de red principal..."
+IFACE=$(ip -4 route show default 2>/dev/null | awk '{print $5}' | head -n1)
+if [ -z "$IFACE" ]; then
+    IFACE=$(ip link | awk -F: '$0 !~ "lo|vir|wl|^[^0-9]"{print $2;getline}' | head -n 1 | tr -d ' ')
+fi
+[ -z "$IFACE" ] && IFACE="ens33"
+echo "[+] Interfaz detectada para Polybar: $IFACE"
+
+echo "[*] 4. Creando estructura de directorios..."
 mkdir -p "$HOME"/.config/{bspwm,sxhkd,kitty,bin}
 mkdir -p "$HOME"/.config/polybar/scripts
 
 # --------------------------------------------------------------------
-# 1. ~/.xinitrc
+# A. ~/.xinitrc
 # --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.xinitrc..."
+echo "[*] Configurando ~/.xinitrc..."
 cat << 'EOF' > "$HOME/.xinitrc"
 #!/usr/bin/env bash
 
@@ -47,26 +55,14 @@ exec dbus-launch --exit-with-session bspwm
 EOF
 
 # --------------------------------------------------------------------
-# 2. BSPWM: ~/.config/bspwm/bspwmrc
+# B. BSPWM (~/.config/bspwm/bspwmrc)
 # --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.config/bspwm/bspwmrc..."
+echo "[*] Configurando ~/.config/bspwm/bspwmrc..."
 cat << 'EOF' > "$HOME/.config/bspwm/bspwmrc"
 #!/usr/bin/env bash
 
-# Modos de pantalla VMware (Virtual-1)
-xrandr --newmode "1920x1080_60.00" 173.00 1920 2048 2248 2576 1080 1083 1088 1120 -hsync +vsync 2>/dev/null
-xrandr --addmode Virtual-1 "1920x1080_60.00" 2>/dev/null
+bspc monitor -d 1 2 3 4 5 6 7 8 9 10
 
-xrandr --newmode "1600x900_60.00"  118.25 1600 1696 1856 2112 900 903 908 934 -hsync +vsync 2>/dev/null
-xrandr --addmode Virtual-1 "1600x900_60.00" 2>/dev/null
-
-# Aplicar 1080p por defecto
-xrandr --output Virtual-1 --mode "1920x1080_60.00" 2>/dev/null
-
-# Espacios de trabajo
-bspc monitor Virtual-1 -d 1 2 3 4 5 6 7 8 9 10 2>/dev/null || bspc monitor -d 1 2 3 4 5 6 7 8 9 10
-
-# Reglas de ventanas y estilo
 bspc config border_width         2
 bspc config window_gap          10
 bspc config split_ratio          0.50
@@ -76,7 +72,6 @@ bspc config gapless_monocle      true
 bspc config normal_border_color  "#24283b"
 bspc config focused_border_color "#7aa2f7"
 
-# Autostart
 killall -q sxhkd; sxhkd &
 killall -q picom; picom --daemon &
 "$HOME"/.config/polybar/launch.sh &
@@ -84,19 +79,19 @@ EOF
 chmod +x "$HOME/.config/bspwm/bspwmrc"
 
 # --------------------------------------------------------------------
-# 3. SXHKD: ~/.config/sxhkd/sxhkdrc
+# C. SXHKD (~/.config/sxhkd/sxhkdrc)
 # --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.config/sxhkd/sxhkdrc..."
+echo "[*] Configurando ~/.config/sxhkd/sxhkdrc..."
 cat << 'EOF' > "$HOME/.config/sxhkd/sxhkdrc"
 # Terminal
 super + Return
     kitty
 
-# Lanzador de aplicaciones
+# Menu Rofi
 super + d
     rofi -show drun
 
-# Reiniciar / Salir de BSPWM
+# Reiniciar / Cerrar sesion BSPWM
 super + alt + {r,q}
     bspc {wm -r,quit}
 
@@ -104,7 +99,7 @@ super + alt + {r,q}
 super + {_,shift + }c
     bspc node -{k,c}
 
-# Foco de ventanas
+# Cambiar foco
 super + {h,j,k,l}
     bspc node -f {west,south,north,east}
 
@@ -116,22 +111,61 @@ super + shift + {h,j,k,l}
 super + {1-9,0}
     bspc desktop -f '^{1-9,10}'
 
-# Enviar ventana a escritorio
+# Mover ventana a escritorio
 super + shift + {1-9,0}
     bspc node -d '^{1-9,10}'
-
-# Modos de pantalla VMware: Super + F (1080p) / Super + Shift + F (1600x900)
-super + f
-    xrandr --output Virtual-1 --mode "1920x1080_60.00" && ~/.config/polybar/launch.sh
-
-super + shift + f
-    xrandr --output Virtual-1 --mode "1600x900_60.00" && ~/.config/polybar/launch.sh
 EOF
 
 # --------------------------------------------------------------------
-# 4. POLYBAR: colors.ini
+# D. KITTY (~/.config/kitty/kitty.conf - Tokyo Night)
 # --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.config/polybar/colors.ini..."
+echo "[*] Configurando Kitty con Tokyo Night..."
+cat << 'EOF' > "$HOME/.config/kitty/kitty.conf"
+# Fuentes
+font_family      JetBrainsMono Nerd Font
+bold_font        auto
+italic_font      auto
+bold_italic_font auto
+font_size        11.5
+
+# Comportamiento de ventana
+window_padding_width 10
+background_opacity 0.95
+confirm_os_window_close 0
+enable_audio_bell no
+
+# Paleta Tokyo Night
+foreground           #c0caf5
+background           #1a1b26
+selection_foreground #c0caf5
+selection_background #33467c
+url_color            #73daca
+cursor               #c0caf5
+cursor_text_color    #1a1b26
+
+# Colores ANSI
+color0  #15161e
+color8  #414868
+color1  #f7768e
+color9  #f7768e
+color2  #9ece6a
+color10 #9ece6a
+color3  #e0af68
+color11 #e0af68
+color4  #7aa2f7
+color12 #7aa2f7
+color5  #bb9af7
+color13 #bb9af7
+color6  #7dcfff
+color14 #7dcfff
+color7  #a9b1d6
+color15 #c0caf5
+EOF
+
+# --------------------------------------------------------------------
+# E. POLYBAR: Colores, Módulos, Scripts y Lanzador
+# --------------------------------------------------------------------
+echo "[*] Configurando Polybar y scripts..."
 cat << 'EOF' > "$HOME/.config/polybar/colors.ini"
 [colors]
 bg       = #1a1b26
@@ -147,15 +181,9 @@ red      = #f7768e
 yellow   = #e0af68
 EOF
 
-# --------------------------------------------------------------------
-# 5. POLYBAR: scripts (target.sh & vpn.sh)
-# --------------------------------------------------------------------
-echo "[*] Escribiendo scripts de Polybar..."
 cat << 'EOF' > "$HOME/.config/polybar/scripts/target.sh"
 #!/usr/bin/env bash
-
 TARGET_FILE="$HOME/.config/bin/target"
-
 if [ -f "$TARGET_FILE" ] && [ -s "$TARGET_FILE" ]; then
     ip_target=$(head -n 1 "$TARGET_FILE")
     echo "%{F#f7768e}󰓾 %{F#c0caf5}$ip_target"
@@ -167,9 +195,7 @@ chmod +x "$HOME/.config/polybar/scripts/target.sh"
 
 cat << 'EOF' > "$HOME/.config/polybar/scripts/vpn.sh"
 #!/usr/bin/env bash
-
 VPN_IP=$(ip -4 addr show tun0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
-
 if [ -n "$VPN_IP" ]; then
     echo "%{F#565f89}| %{F#7dcfff}󰒄 %{F#c0caf5}$VPN_IP"
 else
@@ -178,11 +204,7 @@ fi
 EOF
 chmod +x "$HOME/.config/polybar/scripts/vpn.sh"
 
-# --------------------------------------------------------------------
-# 6. POLYBAR: modules.ini
-# --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.config/polybar/modules.ini..."
-cat << 'EOF' > "$HOME/.config/polybar/modules.ini"
+cat << EOF > "$HOME/.config/polybar/modules.ini"
 [module/bspwm]
 type = internal/bspwm
 pin-workspaces = true
@@ -192,19 +214,19 @@ enable-scroll = true
 format = <label-state>
 
 label-focused = 󰮯
-label-focused-foreground = ${colors.yellow}
+label-focused-foreground = \${colors.yellow}
 label-focused-padding = 1
 
 label-occupied = 󰊠
-label-occupied-foreground = ${colors.blue}
+label-occupied-foreground = \${colors.blue}
 label-occupied-padding = 1
 
 label-empty = ·
-label-empty-foreground = ${colors.fg-alt}
+label-empty-foreground = \${colors.fg-alt}
 label-empty-padding = 1
 
 label-urgent = 󰊠
-label-urgent-foreground = ${colors.red}
+label-urgent-foreground = \${colors.red}
 label-urgent-padding = 1
 
 [module/date]
@@ -214,9 +236,9 @@ date = %H:%M
 date-alt = %Y-%m-%d %H:%M:%S
 format = <label>
 format-prefix = "󰥔 "
-format-prefix-foreground = ${colors.cyan}
+format-prefix-foreground = \${colors.cyan}
 label = %date%
-label-foreground = ${colors.fg}
+label-foreground = \${colors.fg}
 
 [module/target]
 type = custom/script
@@ -228,7 +250,7 @@ type = internal/cpu
 interval = 1
 format = <label>
 format-prefix = "󰻠 "
-format-prefix-foreground = ${colors.magenta}
+format-prefix-foreground = \${colors.magenta}
 label = "%percentage:2%%"
 
 [module/memory]
@@ -236,24 +258,24 @@ type = internal/memory
 interval = 2
 format = <label>
 format-prefix = "󰍛 "
-format-prefix-foreground = ${colors.blue}
+format-prefix-foreground = \${colors.blue}
 label = "%used%"
 
 [module/ethernet]
 type = internal/network
-interface = ens33
+interface = $IFACE
 interval = 3.0
 format-connected = <label-connected>
 format-connected-prefix = "󰈀 "
-format-connected-prefix-foreground = ${colors.green}
+format-connected-prefix-foreground = \${colors.green}
 label-connected = %local_ip%
-label-connected-foreground = ${colors.fg}
+label-connected-foreground = \${colors.fg}
 
 format-disconnected = <label-disconnected>
 format-disconnected-prefix = "󰈂 "
-format-disconnected-prefix-foreground = ${colors.red}
+format-disconnected-prefix-foreground = \${colors.red}
 label-disconnected = "Offline"
-label-disconnected-foreground = ${colors.fg-alt}
+label-disconnected-foreground = \${colors.fg-alt}
 
 [module/vpn]
 type = custom/script
@@ -263,13 +285,9 @@ exec = ~/.config/polybar/scripts/vpn.sh
 [module/sep]
 type = custom/text
 format = " | "
-format-foreground = ${colors.fg-alt}
+format-foreground = \${colors.fg-alt}
 EOF
 
-# --------------------------------------------------------------------
-# 7. POLYBAR: config.ini & launch.sh
-# --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.config/polybar/config.ini..."
 cat << 'EOF' > "$HOME/.config/polybar/config.ini"
 [global/wm]
 margin-bottom = 0
@@ -316,10 +334,8 @@ enable-ipc = true
 wm-restack = bspwm
 EOF
 
-echo "[*] Escribiendo ~/.config/polybar/launch.sh..."
 cat << 'EOF' > "$HOME/.config/polybar/launch.sh"
 #!/usr/bin/env bash
-
 killall -q polybar
 while pgrep -u $UID -x polybar >/dev/null; do sleep 0.2; done
 
@@ -334,14 +350,12 @@ EOF
 chmod +x "$HOME/.config/polybar/launch.sh"
 
 # --------------------------------------------------------------------
-# 8. HERRAMIENTA: settarget
+# F. UTILIDADES: settarget
 # --------------------------------------------------------------------
-echo "[*] Escribiendo ~/.config/bin/settarget..."
+echo "[*] Generando utilidad settarget..."
 cat << 'EOF' > "$HOME/.config/bin/settarget"
 #!/usr/bin/env bash
-
 TARGET_FILE="$HOME/.config/bin/target"
-
 if [ -z "$1" ]; then
     rm -f "$TARGET_FILE"
     echo "[*] Target limpiado."
@@ -353,12 +367,59 @@ EOF
 chmod +x "$HOME/.config/bin/settarget"
 
 # --------------------------------------------------------------------
-# 9. INTEGRACION DE PATH EN SHELL
+# G. INSTALACION DE OH MY ZSH + POWERLEVEL10K + PLUGINS
 # --------------------------------------------------------------------
-for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
-    if [ -f "$rc" ] && ! grep -q 'PATH="$HOME/.config/bin:$PATH"' "$rc"; then
-        echo 'export PATH="$HOME/.config/bin:$PATH"' >> "$rc"
-    fi
-done
+echo "[*] Configurando Oh My Zsh, Powerlevel10k y plugins..."
 
-echo "[✔] Despliegue completado. Puedes iniciar tu entorno con: startx"
+# Descarga desatendida de Oh My Zsh
+if [ ! -d "$HOME/.oh-my-zsh" ]; then
+    RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+fi
+
+ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+
+# Powerlevel10k
+if [ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]; then
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
+fi
+
+# Plugins zsh-autosuggestions y syntax-highlighting
+if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
+    git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+fi
+
+if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
+    git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+fi
+
+# Escribir ~/.zshrc integrado
+echo "[*] Escribiendo ~/.zshrc optimizado..."
+cat << 'EOF' > "$HOME/.zshrc"
+# Powerlevel10k instant prompt
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="powerlevel10k/powerlevel10k"
+
+plugins=(git sudo zsh-autosuggestions zsh-syntax-highlighting)
+
+source $ZSH/oh-my-zsh.sh
+
+# User PATH
+export PATH="$HOME/.config/bin:$PATH"
+
+# Aliases practicos
+alias ll='ls -la --color=auto'
+alias grep='grep --color=auto'
+alias r='bspc wm -r'
+
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+EOF
+
+# Cambiar shell de usuario a ZSH
+sudo chsh -s /usr/bin/zsh "$USER"
+
+echo "[✔] Instalacion y configuracion completada exitosamente."
+echo "[i] Al iniciar 'startx' y abrir Kitty con Super + Enter, Powerlevel10k te guiara en su asistente de diseño (p10k configure)."
